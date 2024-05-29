@@ -4,7 +4,7 @@ from typing import Annotated, Union, Any
 
 import tyro.extras
 
-from .experiment import Experiment, Run
+from ._experiment import Experiment, Run
 
 
 @dataclass
