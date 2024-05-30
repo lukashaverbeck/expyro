@@ -98,7 +98,9 @@ class Experiment(Generic[T_Config, T_Result]):
         dump_result(result, folder)
 
         run = Run(config, result, folder, self)
-        run.plot()
+
+        if self.plotters:
+            run.plot()
 
         return run
 
@@ -141,6 +143,11 @@ class Run(Generic[T_Config, T_Result]):
         folder = self.__make_plot_folder()
         self.__experiment.plot(self.config, self.result, folder)
         return folder
+
+    def rename(self, name: str) -> Run[T_Config, T_Result]:
+        new_location = unique_new_path(self.location.parent / name)
+        self.location.rename(new_location)
+        return Run(self.config, self.result, new_location, self.__experiment)
 
 
 class Plotter(Generic[T_Config, T_Result]):
