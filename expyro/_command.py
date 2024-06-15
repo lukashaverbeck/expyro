@@ -20,17 +20,25 @@ class Location:
         return experiment[path]
 
 
-class PlotLocation(Location):
-    pass
+class PlotLocation(Location): pass
 
 
-class ReproduceLocation(Location):
-    pass
+class ReproduceLocation(Location): pass
+
 
 
 def make_experiment_parser(experiment: Experiment):
     if experiment.signature.config_cls is None:
         raise TypeError("Procedure must have a type hint for the configuration class to be used as a CLI argument.")
+
+    config_options = tyro.extras.literal_type_from_choices(experiment.config_options.keys())
+
+    @tyro.conf.configure(tyro.conf.OmitArgPrefixes)
+    @dataclass(frozen=True)
+    class ConfigOption:
+        name: Annotated[tyro.conf.Positional[config_options], tyro.conf.arg(
+            name="name", help="name of the configuration option to use"
+        )]
 
     @tyro.conf.configure(tyro.conf.OmitSubcommandPrefixes)
     def parse_experiment(command: Union[
@@ -42,6 +50,9 @@ def make_experiment_parser(experiment: Experiment):
         )],
         Annotated[experiment.signature.config_cls, tyro.conf.subcommand(
             name="run", description="run the experiment"
+        )],
+        Annotated[ConfigOption, tyro.conf.subcommand(
+            name="configured", description="run the experiment from a pre-defined configuration option",
         )]
     ]):
         if isinstance(command, PlotLocation):
@@ -52,6 +63,10 @@ def make_experiment_parser(experiment: Experiment):
             print(f"Saved to '{run.location}'")
         elif isinstance(command, experiment.signature.config_cls):
             run = experiment(command)
+            print(f"Saved to '{run.location}'")
+        elif isinstance(command, ConfigOption):
+            config = experiment.config_options[command.name]
+            run = experiment(config)
             print(f"Saved to '{run.location}'")
         else:
             raise NotImplementedError("Unknown command")

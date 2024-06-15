@@ -26,12 +26,7 @@ class ProcedureSignature(Generic[T_Config, T_Result]):
 
     def __init__(self, procedure: Procedure[T_Config, T_Result]):
         type_hints = get_type_hints(procedure)
-
-        if "return" in type_hints:
-            self.result_cls = type_hints["return"]
-            type_hints.pop("return")
-        else:
-            self.result_cls = None
+        self.result_cls = type_hints.pop("return") if "return" in type_hints else None
 
         if len(type_hints) == 1:
             self.config_name, self.config_cls = type_hints.popitem()
@@ -46,6 +41,7 @@ class Experiment(Generic[T_Config, T_Result]):
     directory: Path
     name: str
     plotters: list[Plotter]
+    config_options: dict[str, T_Config]
 
     def __init__(self, procedure: Procedure[T_Config, T_Result], directory: Path, name: str):
         assert inspect.isfunction(procedure), "Procedure must be a function."
@@ -56,6 +52,7 @@ class Experiment(Generic[T_Config, T_Result]):
         self.directory = directory
         self.name = name
         self.plotters = []
+        self.config_options = {}
 
         update_wrapper(self, procedure)
 
@@ -73,6 +70,9 @@ class Experiment(Generic[T_Config, T_Result]):
 
     def extend_plots(self, plots: Iterable[Plotter]):
         self.plotters.extend(plots)
+
+    def extend_config_options(self, options: Mapping[str, T_Config]):
+        self.config_options |= options
 
     def config(self, location: Path | str) -> T_Config:
         location = self.__folder(location)
@@ -199,6 +199,22 @@ def experiment(root_directory: Path, name: str | None = None) -> ProcedureDecora
 def plot(*artists: Artist, file_format: str = "pdf", show: bool = False, **kwargs) -> ExperimentDecorator:
     def decorator(experiment_: Experiment[T_Config, T_Result]) -> Experiment[T_Config, T_Result]:
         experiment_.extend_plots([Plotter(artist, file_format, show, **kwargs) for artist in artists])
+        return experiment_
+
+    return decorator
+
+
+def config_option(name: str, config: T_Config) -> ExperimentDecorator:
+    def decorator(experiment_: Experiment[T_Config, T_Result]) -> Experiment[T_Config, T_Result]:
+        experiment_.extend_config_options({name: config})
+        return experiment_
+
+    return decorator
+
+
+def config_options(options: Mapping[str, T_Config]) -> ExperimentDecorator:
+    def decorator(experiment_: Experiment[T_Config, T_Result]) -> Experiment[T_Config, T_Result]:
+        experiment_.extend_config_options(options)
         return experiment_
 
     return decorator
