@@ -8,8 +8,8 @@ from typing import Generic, TypeVar, TypeAlias, Callable, Iterator, Mapping, Ite
 
 from matplotlib import pyplot as plt
 
-from ._serialization import load_config, load_result, dump_config, dump_result, has_config, has_result
-from ._util import unique_new_path
+from expyro.serialization import load_config, load_result, dump_config, dump_result, has_config, has_result
+from expyro.util import unique_new_path
 
 T_Config = TypeVar("T_Config")
 T_Result = TypeVar("T_Result")
@@ -87,7 +87,7 @@ class Experiment(Generic[T_Config, T_Result]):
             plotter(config, result, folder)
 
     def cli(self) -> tuple[Any, list[str]]:
-        from ._command import cli
+        from .command import cli
         return cli(self)
 
     def __call__(self, config: T_Config) -> Run[T_Config, T_Result]:
