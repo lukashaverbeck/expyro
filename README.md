@@ -1,7 +1,3 @@
-Of course! Here's a revamped, emoji-filled, and (hopefully) funny README for your `expyro` library.
-
-***
-
 # expyro 🧪✨
 
 A minimal, type-safe Python library to stop your experiments from being a hot mess. Because "it worked on my machine" is not a valid scientific publication.
@@ -176,3 +172,4 @@ MIT License. Go forth and experiment! Just maybe use this library first.
 ---
 
 **Now go forth and reproduce!** 🚀
+
