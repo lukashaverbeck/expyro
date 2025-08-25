@@ -1,19 +1,13 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Callable, Literal, Mapping, Optional, Iterable
+from typing import TYPE_CHECKING, Callable, Iterable, Literal, Mapping, Optional
 
-from expyro._experiment import ExperimentWrapper, Experiment, Run
+from expyro._experiment import Experiment, ExperimentWrapper, Run
 
-try:
-    from matplotlib import pyplot as plt
-except ImportError as e:
-    raise ImportError("Install with `pip install expyro[matplotlib]` to use with matplotlib.") from e
-
-try:
+if TYPE_CHECKING:
+    import matplotlib.pyplot as plt
     import pandas as pd
-except ImportError as e:
-    raise ImportError("Install with `pip install expyro[pandas]` to use with pandas.") from e
 
 type Nested[T] = T | Mapping[str, T]
 type NestedPlot = Nested[plt.Figure]
@@ -61,11 +55,16 @@ def _handle_artists[I, O, T](
 
 
 def plot[I, O](
-        *artists: Callable[[I, O], Nested],
+        *artists: Callable[[I, O], NestedPlot],
         file_format: Literal["png", "pdf"] = "png",
         dpi: int = 500,
         **kwargs
 ) -> ExperimentWrapper[I, O]:
+    try:
+        import matplotlib.pyplot as plt
+    except ImportError as e:
+        raise ImportError("Install with `pip install expyro[matplotlib]` to use with matplotlib.") from e
+
     def postprocessor(run: Run[I, O]):
         dir_plots = run.make_new_subdir("plots")
 
@@ -84,6 +83,11 @@ def plot[I, O](
 
 
 def table[I, O](*artists: Callable[[I, O], NestedTable]) -> ExperimentWrapper[I, O]:
+    try:
+        import pandas as pd
+    except ImportError as e:
+        raise ImportError("Install with `pip install expyro[pandas]` to use with pandas.") from e
+
     def postprocessor(run: Run[I, O]) -> None:
         dir_tables = run.make_new_subdir("tables")
 
