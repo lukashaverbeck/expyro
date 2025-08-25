@@ -1,4 +1,2 @@
-graft expyro
-include pyproject.toml
-include setup.py
-global-exclude *.py[cod]
+include README.md
+include LICENSE

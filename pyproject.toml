@@ -35,6 +35,7 @@ Homepage = "https://github.com/lukashaverbeck/expyro"
 Issues = "https://github.com/lukashaverbeck/expyro/issues"
 
 [tool.setuptools.packages.find]
+where = ["."]
 include = ["expyro*"]
 
 [tool.setuptools.package-data]
