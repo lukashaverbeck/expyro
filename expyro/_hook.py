@@ -27,8 +27,8 @@ def hook(name: str, mode: str = "r", *, encoding: str | None = None, **kwargs):
     if path is None:
         raise ValueError("Context for current run was empty.")
 
-    dump_dir = path / "data"
-    dump_dir.mkdir(parents=True, exist_ok=True)
+    path = path / "data" / name
+    path.parent.mkdir(parents=True, exist_ok=True)
 
-    with open(dump_dir / name, mode, encoding=encoding, **kwargs) as f:
+    with open(path, mode, encoding=encoding, **kwargs) as f:
         yield f
