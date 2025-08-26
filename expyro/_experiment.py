@@ -3,18 +3,23 @@ from __future__ import annotations
 import inspect
 import os
 import pickle
+import shutil
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
 from functools import update_wrapper
 from pathlib import Path
-from typing import Callable, get_type_hints, Generator, Optional
+from typing import Callable, get_type_hints, Optional, TYPE_CHECKING, Iterator, NamedTuple
 
 import expyro._hook as hook
 
 type ExperimentFn[I, O] = Callable[[I], O]
-type ExperimentWrapper[I, O] = Callable[..., Experiment[I, O]]
 type Postprocessor[I, O] = Callable[[Run[I, O]], None]
+
+if TYPE_CHECKING:
+    from expyro._artifacts import Artifact
+
+registry: dict[str, Experiment] = {}
 
 
 @dataclass(frozen=True)
@@ -112,31 +117,93 @@ class Run[I, O]:
         return subdir
 
 
+class ArtifactMetadata(NamedTuple):
+    name: str
+    directory_name: str
+
+    def path(self, run: Run) -> Path:
+        return run.path / "artifacts" / self.directory_name
+
+
 class Experiment[I, O]:
     fn: ExperimentFn[I, O]
     signature: Signature[I, O]
     root_dir: Path
     name: str
-    plots: list[Postprocessor[I, O]]
-    tables: list[Postprocessor[I, O]]
+    __artifacts: dict[ArtifactMetadata, list[Artifact[I, O]]]
 
     @property
-    def postprocessors(self) -> list[Postprocessor[I, O]]:
-        return self.plots + self.tables
+    def artifact_names(self) -> set[str]:
+        return {metadata.name for metadata in self.__artifacts}
 
     def __init__(self, fn: ExperimentFn[I, O], dir_runs: Path, name: str):
         if not inspect.isfunction(fn):
             raise TypeError(f"Expected function, got {type(fn)}.")
 
+        if name in registry:
+            raise KeyError(f"Experiment `{name}` already exists.")
+
+        registry[name] = self
+
         self.fn = fn
         self.signature = Signature.from_fn(fn)
         self.root_dir = dir_runs / name
         self.name = name
-        self.plots = []
-        self.tables = []
+        self.__artifacts = {}
+
+        self.root_dir.mkdir(parents=True, exist_ok=True)
 
         update_wrapper(self, fn)
-        self.root_dir.mkdir(parents=True, exist_ok=True)
+
+    def register_artifact(
+            self, artifact: Artifact[I, O], name: Optional[str] = None, directory_name: Optional[str] = None
+    ):
+        if name is None:
+            name = artifact.__name__
+
+        if directory_name is None:
+            directory_name = name
+
+        metadata = ArtifactMetadata(name=name, directory_name=directory_name)
+
+        if metadata not in self.__artifacts:
+            self.__artifacts[metadata] = []
+
+        self.__artifacts[metadata].append(artifact)
+
+    def redo_artifact(self, name: str, run: Run[I, O] | str | Path):
+        if not isinstance(run, Run):
+            run = self[run]
+
+        found = False
+
+        for metadata, artifacts in self.__artifacts.items():
+            if metadata.name != name:
+                continue
+
+            path = metadata.path(run)
+
+            if path.exists():
+                shutil.rmtree(path)
+
+            self.__make_artifacts(metadata, run)
+            found = True
+
+        if not found:
+            raise KeyError(f"Experiment has no artifact with name `{name}`.")
+
+    def __make_artifacts(self, meta: ArtifactMetadata, run: Run[I, O]):
+        path = meta.path(run)
+        path.mkdir(parents=True, exist_ok=True)
+
+        for artifact in self.__artifacts[meta]:
+            artifact(path, run.config, run.result)
+
+    def reproduce(self, run: Run[I, O] | str | Path) -> Run[I, O]:
+        if not isinstance(run, Run):
+            run = self[run]
+
+        return self(run.config)
 
     def __call__(self, config: I) -> Run[I, O]:
         now = datetime.now()
@@ -153,12 +220,12 @@ class Experiment[I, O]:
         run = Run(config, result, dir_run)
         run.dump()
 
-        for postprocessor in self.postprocessors:
-            postprocessor(run)
+        for metadata in self.__artifacts:
+            self.__make_artifacts(metadata, run)
 
         return run
 
-    def __iter__(self) -> Generator[Run[I, O], None, None]:
+    def __iter__(self) -> Iterator[Run[I, O]]:
         for path_str, _, _ in os.walk(self.root_dir):
             path = Path(path_str)
 

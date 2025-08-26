@@ -1,6 +1,6 @@
 # expyro 🧪✨
 
-A minimal, type-safe Python library to stop your experiments from being a hot mess. Because "it worked on my machine" is not a valid scientific publication.
+A minimal Python library to stop your experiments from being a hot mess. Because "it worked on my machine" is not a valid scientific publication.
 
 `expyro` is your new lab assistant 🧑‍🔬 that automatically organizes your chaos: configurations, results, plots, and even that random log file you swear you'll look at later.
 
@@ -33,16 +33,13 @@ pip install "expyro[pandas]"
 
 # I want it ALL! 🤑
 pip install "expyro[all]"
-
-# For developers (building, publishing)
-pip install "expyro[dev]"
 ```
 
 ## Quickstart: From Chaos to Clarity in 60 Seconds ⏱️
 
 ### 1. Define Your Experiment 🧪
 
-Decorate your function. It's like putting a lab coat on it.
+Decorate your experiment function. It's like putting a lab coat on it.
 
 ```python
 from dataclasses import dataclass
@@ -57,9 +54,11 @@ class TrainConfig:
     epochs: int = 10            # The "are we there yet?" parameter
 
 # Step 2: Declare your experiment. Give it a home ("runs/") and a name.
+# Your experiment must take exactly one argument as a config.
+# The input and output must be typed. 
 @expyro.experiment(root=Path("runs"), name="my_awesome_experiment")
 def train_model(config: TrainConfig) -> dict[str, float]:
-    # Your brilliant (or "it should work") code goes here.
+    # Your brilliant (or "it should work") experiment logic goes here.
     final_loss = 0.1 * config.learning_rate
     final_accuracy = 0.9
 
@@ -86,14 +85,14 @@ Automatically save plots and tables. Impress everyone.
 import matplotlib.pyplot as plt
 import pandas as pd
 
-# Artist function: Takes config & result, returns a masterpiece (figure)
+# Artist function: Takes config & result, returns a masterpiece (figure) or even a nested string dict of masterpieces
 def create_plot(config: TrainConfig, result: dict) -> plt.Figure:
     fig, ax = plt.subplots()
     ax.bar(["Loss", "Accuracy"], [result["final_loss"], result["final_accuracy"]])
     ax.set_title("How Did We Do?")
     return fig
 
-# Analyst function: Takes config & result, returns a sweet, sweet table
+# Analyst function: Takes config & result, returns a sweet, sweet table (or a nested string dict of tables)
 def create_table(config: TrainConfig, result: dict) -> pd.DataFrame:
     return pd.DataFrame([{"metric": k, "value": v} for k, v in result.items()])
 
@@ -114,7 +113,7 @@ Use `hook` to save anything else right into the experiment's folder.
 @expyro.experiment(root=Path("runs"), name="experiment_with_everything")
 def train_with_logging(config: TrainConfig) -> dict:
     # Save a log file
-    with expyro.hook("training_log.txt", "w") as f:
+    with expyro.hook("logs/training_log.txt", "w") as f:
         f.write(f"Let's hope this LR {config.learning_rate} works...\n")
         f.write("Epoch 1: Loss=0.5 😬\n")
         f.write("Epoch 2: Loss=0.2 😊\n")
@@ -151,19 +150,54 @@ Here’s how `expyro` organizes your brilliance:
 runs/
 └── my_awesome_experiment/    # Your experiment name
     └── 2024-05-27/           # The date (so you know when you did the work)
-        ├── 12:30:45.123 abcdef00/       # Time & unique ID (so you can find it)
+        ├── 12:30:45.123 abcdef00/        # Time & unique ID (so you can find it)
         │   ├── config.pickle             # 🗃️ Your configuration, pickled.
         │   ├── result.pickle             # 📊 Your results, also pickled.
-        │   ├── data/                     # 💾 Your custom files live here (from `hook`)
-        │   │   └── training_log.txt
-        │   ├── plots/                    # 🎨 Home for your beautiful graphs
-        │   │   └── create_plot.pdf
-        │   └── tables/                   # 📋 Home for your elegant tables
-        │       └── create_table.csv
+        │   ├── artifacts/
+        │   │   ├── plots/                # 🎨 Home for your beautiful graphs
+        │   │   │   └── create_plot.pdf
+        │   │   └── tables/               # 📋 Home for your elegant tables
+        │   │       └── create_table.csv
+        │   └── data/                     # 💾 Your custom files live here (from `hook`)
+        │       └── logs/
+        │           └── training_log.txt
         └── 14:22:10.456 1a2b3c4d/        # Another run! You've been busy!
             ├── config.pickle
             └── result.pickle
 ```
+
+## CLI Time Travel Machine ⏳💻
+
+Prefer the command line life? `expyro` scans your project for decorated experiments and hands each one its own
+subcommand. It's like giving every lab rat a keyboard. 🐀
+
+```
+# Run a fresh experiment
+expyro my_awesome_experiment run --learning-rate 0.01 --batch-size 32
+
+# Reproduce an old run with the exact same config
+expyro my_awesome_experiment reproduce "2024-05-27/12:30:45.123 abcdef00"
+
+# Redo an artifact when you forgot to save that plot 🎨
+expyro my_awesome_experiment redo plots "2024-05-27/12:30:45.123 abcdef00"
+```
+
+Why so many verbs? Because reproducibility is king 👑:
+
+* **`run`** starts a brand-new adventure and saves everything.
+* **`reproduce`** reruns an experiment with the original config, giving you a carbon-copy run for free.
+* **`redo`** regenerates plots or tables for an existing run, so you can tweak your visuals without touching the 
+science.
+
+All from the shell, all consistent, all reproducible. 🔁
+
+For detailed information for your specific setup, run
+
+```bash
+expyro --help
+```
+
+from the root directory of your project.
 
 ## License 📄
 
