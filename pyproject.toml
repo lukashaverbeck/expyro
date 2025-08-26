@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "expyro"
-version = "0.0.1"
+version = "0.0.2"
 description = "A minimal library to manage reproducible experiments."
 readme = { file = "README.md", content-type = "text/markdown" }
 requires-python = ">=3.12"
@@ -40,3 +40,6 @@ include = ["expyro*"]
 
 [tool.setuptools.package-data]
 expyro = ["py.typed"]
+
+[project.scripts]
+expyro = "expyro._cli:main"
