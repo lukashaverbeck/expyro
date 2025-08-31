@@ -9,12 +9,13 @@ from dataclasses import dataclass
 from datetime import datetime
 from functools import update_wrapper
 from pathlib import Path
-from typing import Callable, get_type_hints, Optional, TYPE_CHECKING, Iterator, NamedTuple
+from typing import Callable, get_type_hints, Optional, TYPE_CHECKING, Iterator, NamedTuple, Mapping
 
 import expyro._hook as hook
 
 type ExperimentFn[I, O] = Callable[[I], O]
 type Postprocessor[I, O] = Callable[[Run[I, O]], None]
+type ExperimentWrapper[I, O] = Callable[[Experiment[I, O]], Experiment[I, O]]
 
 if TYPE_CHECKING:
     from expyro._artifacts import Artifact
@@ -131,10 +132,15 @@ class Experiment[I, O]:
     root_dir: Path
     name: str
     __artifacts: dict[ArtifactMetadata, list[Artifact[I, O]]]
+    __default_configs: dict[str, I]
 
     @property
     def artifact_names(self) -> set[str]:
         return {metadata.name for metadata in self.__artifacts}
+
+    @property
+    def default_config_names(self) -> set[str]:
+        return set(self.__default_configs.keys())
 
     def __init__(self, fn: ExperimentFn[I, O], dir_runs: Path, name: str):
         if not inspect.isfunction(fn):
@@ -147,9 +153,10 @@ class Experiment[I, O]:
 
         self.fn = fn
         self.signature = Signature.from_fn(fn)
-        self.root_dir = dir_runs / name
+        self.root_dir = dir_runs.absolute() / name
         self.name = name
         self.__artifacts = {}
+        self.__default_configs = {}
 
         self.root_dir.mkdir(parents=True, exist_ok=True)
 
@@ -170,6 +177,12 @@ class Experiment[I, O]:
             self.__artifacts[metadata] = []
 
         self.__artifacts[metadata].append(artifact)
+
+    def register_default_config(self, name: str, config: I):
+        if name in self.__default_configs:
+            raise KeyError(f"Experiment `{name}` already exists.")
+
+        self.__default_configs[name] = config
 
     def redo_artifact(self, name: str, run: Run[I, O] | str | Path):
         if not isinstance(run, Run):
@@ -204,6 +217,14 @@ class Experiment[I, O]:
             run = self[run]
 
         return self(run.config)
+
+    def run_default(self, name: str) -> Run[I, O]:
+        if name not in self.default_config_names:
+            raise KeyError(f"Experiment `{name}` doesn't exist.")
+
+        config = self.__default_configs[name]
+
+        return self(config)
 
     def __call__(self, config: I) -> Run[I, O]:
         now = datetime.now()
@@ -247,5 +268,19 @@ def experiment[I, O](root: Path, name: Optional[str] = None) -> Callable[[Callab
             name = fn.__name__
 
         return Experiment(fn, dir_runs=root, name=name)
+
+    return wrapper
+
+
+def default[I, O](name: str, config: I) -> ExperimentWrapper[I, O]:
+    return defaults({name: config})
+
+
+def defaults[I, O](configs: Mapping[str, I]) -> ExperimentWrapper[I, O]:
+    def wrapper(exp: Experiment[I, O]) -> Experiment[I, O]:
+        for name, config in configs.items():
+            exp.register_default_config(name, config)
+
+        return exp
 
     return wrapper

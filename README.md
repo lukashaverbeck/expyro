@@ -1,6 +1,6 @@
 # expyro 🧪✨
 
-A minimal Python library to stop your experiments from being a hot mess. Because "it worked on my machine" is not a valid scientific publication.
+A lightweight Python library to stop your experiments from being a hot mess. Because "it worked on my machine" is not a valid scientific publication.
 
 `expyro` is your new lab assistant 🧑‍🔬 that automatically organizes your chaos: configurations, results, plots, and even that random log file you swear you'll look at later.
 
@@ -105,7 +105,23 @@ def train_and_analyze(config: TrainConfig) -> dict:
     return {"final_loss": 0.1, "final_accuracy": 0.9}
 ```
 
-### 4. Save ALL THE THINGS! 💾
+### 4. Pre-Bake Configs 🍱
+
+Got favorite settings you keep typing over and over? Stash them as defaults and
+summon them later from the command line (see below).
+
+```python
+@expyro.defaults({
+    "config-1": TrainConfig(learning_rate=0.1, batch_size=32, epochs=5),
+    "config-2": TrainConfig(learning_rate=0.001, batch_size=64, epochs=20),
+})
+@expyro.experiment(root=Path("runs"), name="experiment_with_defaults")
+def train_with_defaults(config: TrainConfig) -> dict:
+    # ... your code ...
+    return {"final_loss": 0.1}
+```
+
+### 5. Save ALL THE THINGS! 💾
 
 Use `hook` to save anything else right into the experiment's folder.
 
@@ -175,6 +191,9 @@ subcommand. It's like giving every lab rat a keyboard. 🐀
 # Run a fresh experiment
 expyro my_awesome_experiment run --learning-rate 0.01 --batch-size 32
 
+# Kick off a run using a pre-baked config
+expyro my_awesome_experiment default config-1
+
 # Reproduce an old run with the exact same config
 expyro my_awesome_experiment reproduce "2024-05-27/12:30:45.123 abcdef00"
 
@@ -185,6 +204,7 @@ expyro my_awesome_experiment redo plots "2024-05-27/12:30:45.123 abcdef00"
 Why so many verbs? Because reproducibility is king 👑:
 
 * **`run`** starts a brand-new adventure and saves everything.
+* **`default`** grabs a config registered with `@expyro.defaults` and runs it - no flags needed.
 * **`reproduce`** reruns an experiment with the original config, giving you a carbon-copy run for free.
 * **`redo`** regenerates plots or tables for an existing run, so you can tweak your visuals without touching the 
 science.
