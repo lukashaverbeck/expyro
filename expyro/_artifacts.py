@@ -3,14 +3,13 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Iterable, Literal, Mapping, Optional
 
-from expyro._experiment import Experiment
+from expyro._experiment import Experiment, ExperimentWrapper
 
 if TYPE_CHECKING:
     import matplotlib.pyplot as plt
     import pandas as pd
 
 type Artifact[I, O] = Callable[[Path, I, O], None]
-type ExperimentWrapper[I, O] = Callable[[Experiment[I, O]], Experiment[I, O]]
 
 
 def artifact[I, O](

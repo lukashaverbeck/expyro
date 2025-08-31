@@ -23,7 +23,8 @@ class ExecutableCommand(ABC):
 
 @typing.no_type_check
 def make_experiment_subcommand(experiment: Experiment):
-    artifact_literal = tyro.extras.literal_type_from_choices(experiment.artifact_names)
+    artifact_literal = tyro.extras.literal_type_from_choices(sorted(experiment.artifact_names))
+    default_config_literal = tyro.extras.literal_type_from_choices(sorted(experiment.default_config_names))
 
     @dataclass(frozen=True)
     class Redo(ExecutableCommand):
@@ -41,20 +42,31 @@ def make_experiment_subcommand(experiment: Experiment):
             run = experiment.reproduce(self.path)
             print(f"[expyro] Saved reproduced run to: {run.path.as_uri()}")
 
-    args = []
+    @dataclass(frozen=True)
+    class Default(ExecutableCommand):
+        name: Annotated[default_config_literal, tyro.conf.Positional]  # name of config
 
-    args.append(Annotated[Reproduce, tyro.conf.subcommand(
-        name="reproduce", description="Run experiment with config of existing run."
-    )])
+        def __call__(self):
+            run = experiment.run_default(self.name)
+            print(f"[expyro] Saved run to: {run.path.as_uri()}")
 
+    args = [
+        Annotated[Reproduce, tyro.conf.subcommand(
+            name="reproduce", description="Run experiment with config of existing run."
+        )],
+        Annotated[experiment.signature.type_config, tyro.conf.subcommand(
+            name="run", description="Run experiment with custom config."
+        )]
+    ]
+
+    if experiment.default_config_names:
+        args.append(Annotated[Default, tyro.conf.subcommand(
+            name="default", description="Run experiment with predefined config."
+        )])
     if experiment.artifact_names:
         args.append(Annotated[Redo, tyro.conf.subcommand(
             name="redo", description="Recreate artifacts of existing run."
         )])
-
-    args.append(Annotated[experiment.signature.type_config, tyro.conf.subcommand(
-        name="run", description="Run the experiment."
-    )])
 
     @tyro.conf.configure(tyro.conf.OmitSubcommandPrefixes)
     def parse_experiment(config: Union[tuple(args)]):
@@ -66,30 +78,21 @@ def make_experiment_subcommand(experiment: Experiment):
         else:
             raise ValueError(f"Cannot handle argument of type {type(config)}: {config}.")
 
-    parse_experiment.__doc__ = experiment.fn.__doc__
-
     return parse_experiment
 
 
 def cli(*experiments: Experiment):
     prog = "expyro"
-    description = "Run experiments and reproduce results. Works on experiments decorated with @expyro.experiment."
+    description = "Run experiments and reproduce results. Works on experiments decorated with `@expyro.experiment`."
 
-    if len(experiments) == 1:
-        tyro.cli(
-            f=make_experiment_subcommand(experiments[0]),
-            prog=prog,
-            description=description,
-        )
-    elif len(experiments) > 1:
-        tyro.extras.subcommand_cli_from_dict(
-            subcommands={
-                experiment.name: make_experiment_subcommand(experiment)
-                for experiment in experiments
-            },
-            prog=prog,
-            description=description,
-        )
+    tyro.extras.subcommand_cli_from_dict(
+        subcommands={
+            experiment.name: make_experiment_subcommand(experiment)
+            for experiment in experiments
+        },
+        prog=prog,
+        description=description,
+    )
 
 
 SKIP_DIRS = {".git", ".venv", "venv", "__pycache__", "site-packages", "expyro"}
