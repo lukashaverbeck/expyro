@@ -141,7 +141,7 @@ def train_with_logging(config: TrainConfig) -> dict:
     return {"final_loss": 0.1}
 ```
 
-### 5. Analyze Your Glory (or Mistakes) 🔍
+### 6. Analyze Your Glory (or Mistakes) 🔍
 
 Iterate over past runs like a data archaeologist.
 
