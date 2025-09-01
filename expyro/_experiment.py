@@ -94,15 +94,31 @@ class Run[I, O]:
         with open(self.path / "config.pickle", "wb") as f:
             pickle.dump(self.config, f)
 
-    def rename(self, name: str):
+    def rename(self, name: str, soft: bool = False):
         new_path = self.root_dir / name
 
-        if self.is_run(new_path):
+        if not soft and self.is_run(new_path):
             raise IsADirectoryError(f"Run at {new_path} already exists.")
+
+        if soft:
+            i = 1
+
+            while new_path.exists():
+                new_path = self.root_dir / f"{name} ({i})"
+                i += 1
 
         self.path = self.path.rename(new_path)
 
-    def move(self, path: Path):
+    def move(self, path: Path, soft: bool = False):
+        path = path.absolute()
+
+        if soft:
+            i = 1
+            name = path.name
+            while path.exists():
+                path = path.parent / f"{name} ({i})"
+                i += 1
+
         self.path = self.path.rename(path)
 
     def make_new_subdir(self, name: str) -> Path:
@@ -132,6 +148,7 @@ class Experiment[I, O]:
     root_dir: Path
     name: str
     __artifacts: dict[ArtifactMetadata, list[Artifact[I, O]]]
+    __postprocessors: list[Postprocessor[I, O]]
     __default_configs: dict[str, I]
 
     @property
@@ -156,6 +173,7 @@ class Experiment[I, O]:
         self.root_dir = dir_runs.absolute() / name
         self.name = name
         self.__artifacts = {}
+        self.__postprocessors = []
         self.__default_configs = {}
 
         self.root_dir.mkdir(parents=True, exist_ok=True)
@@ -177,6 +195,9 @@ class Experiment[I, O]:
             self.__artifacts[metadata] = []
 
         self.__artifacts[metadata].append(artifact)
+
+    def register_postprocessor(self, processor: Postprocessor[I, O]):
+        self.__postprocessors.append(processor)
 
     def register_default_config(self, name: str, config: I):
         if name in self.__default_configs:
@@ -243,6 +264,9 @@ class Experiment[I, O]:
 
         for metadata in self.__artifacts:
             self.__make_artifacts(metadata, run)
+
+        for processor in self.__postprocessors:
+            processor(run)
 
         return run
 
