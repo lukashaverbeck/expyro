@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable, Iterable, Literal, Mapping, Optional
+from typing import TYPE_CHECKING, Callable, Iterable, Literal, Mapping, Optional, Any, cast
 
 from expyro._experiment import Experiment, ExperimentWrapper
 
@@ -102,3 +103,28 @@ def table[I, O](*artists: Callable[[I, O], NestedTable]) -> ExperimentWrapper[I,
         _handle_artists(config, result, artists, save)
 
     return artifact(processor, name="tables", directory_name="tables")
+
+
+def snapshot[T: Experiment[Any, Any]](*paths: Path | str, compress: bool = False) -> Callable[[T], T]:
+    def processor(dir_snapshots: Path, _, __) -> None:
+        for path in paths:
+            path = Path(path)
+
+            if not path.exists():
+                raise FileNotFoundError(f"Path {path} does not exist.")
+
+            dest = dir_snapshots / path.name
+
+            if compress:
+                shutil.make_archive(
+                    base_name=str(dest.with_suffix("")),
+                    format="zip",
+                    root_dir=path.parent,
+                    base_dir=path.name
+                )
+            elif path.is_dir():
+                shutil.copytree(path, dest)
+            elif path.is_file():
+                shutil.copy(path, dest)
+
+    return cast(Callable[[T], T], artifact(processor, name="snapshots", directory_name="snapshots"))
