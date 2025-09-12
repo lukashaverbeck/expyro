@@ -119,6 +119,7 @@ class Run[I, O]:
                 path = path.parent / f"{name} ({i})"
                 i += 1
 
+        path.parent.mkdir(parents=True, exist_ok=True)
         self.path = self.path.rename(path)
 
     def make_new_subdir(self, name: str) -> Path:

@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Annotated, Union, Iterable
 
 import tyro.extras
+from tyro.constructors import UnsupportedTypeAnnotationError
 
 import expyro._experiment
 from expyro._experiment import Experiment
@@ -53,11 +54,25 @@ def make_experiment_subcommand(experiment: Experiment):
     args = [
         Annotated[Reproduce, tyro.conf.subcommand(
             name="reproduce", description="Run experiment with config of existing run."
-        )],
-        Annotated[experiment.signature.type_config, tyro.conf.subcommand(
-            name="run", description="Run experiment with custom config."
         )]
     ]
+
+    try:
+        tyro.extras.get_parser(experiment.signature.type_config)
+    except (AssertionError, UnsupportedTypeAnnotationError) as e:
+        @dataclass(frozen=True)
+        class RunNotAvailable(ExecutableCommand):
+            def __call__(self, _e: str = e):
+                print(f"[expyro] Cannot run experiment from command line because config "
+                      f"`{experiment.signature.type_config}` cannot be parsed. {_e}")
+
+        args.append(Annotated[RunNotAvailable, tyro.conf.subcommand(
+            name="run", description="Command unavailable. Run without arguments for details."
+        )])
+    else:
+        args.append(Annotated[experiment.signature.type_config, tyro.conf.subcommand(
+            name="run", description="Run experiment with custom config."
+        )])
 
     if experiment.default_config_names:
         args.append(Annotated[Default, tyro.conf.subcommand(
