@@ -121,6 +121,19 @@ def train_with_defaults(config: TrainConfig) -> dict:
     return {"final_loss": 0.1}
 ```
 
+#### Launch Defaults from the CLI (With Overrides!) 🕹️
+
+Stop editing Python files just to try a new seed. Each stored default becomes its
+own subcommand under `default`, so you can mix and match directly from the terminal:
+
+```bash
+# Use config-1 exactly as declared above
+expyro experiment_with_defaults default config-1
+
+# Tweak a couple of fields on the fly
+expyro experiment_with_defaults default config-1 --learning-rate=0.001 --epochs=
+```
+
 ### 5. Save ALL THE THINGS! 💾
 
 Use `hook` to save anything else right into the experiment's folder.
