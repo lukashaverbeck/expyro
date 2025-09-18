@@ -157,8 +157,8 @@ class Experiment[I, O]:
         return {metadata.name for metadata in self.__artifacts}
 
     @property
-    def default_config_names(self) -> set[str]:
-        return set(self.__default_configs.keys())
+    def default_configs(self) -> dict[str, I]:
+        return dict(self.__default_configs)
 
     def __init__(self, fn: ExperimentFn[I, O], dir_runs: Path, name: str):
         if not inspect.isfunction(fn):
@@ -241,7 +241,7 @@ class Experiment[I, O]:
         return self(run.config)
 
     def run_default(self, name: str) -> Run[I, O]:
-        if name not in self.default_config_names:
+        if name not in self.__default_configs:
             raise KeyError(f"Experiment `{name}` doesn't exist.")
 
         config = self.__default_configs[name]

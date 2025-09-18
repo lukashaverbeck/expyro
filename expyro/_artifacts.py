@@ -16,6 +16,9 @@ type Artifact[I, O] = Callable[[Path, I, O], None]
 def artifact[I, O](
         processor: Artifact[I, O], name: Optional[str] = None, directory_name: Optional[str] = None
 ) -> Callable[[Experiment[I, O]], Experiment[I, O]]:
+    if name is None and processor.__name__ == "<lambda>":
+        raise ValueError("Anonymous functions must have a name.")
+
     def wrapper(experiment: Experiment[I, O]) -> Experiment[I, O]:
         experiment.register_artifact(processor, name, directory_name)
         return experiment
