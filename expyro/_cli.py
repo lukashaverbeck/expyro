@@ -1,9 +1,10 @@
 import ast
+import copy
 import os
 import sys
 import typing
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field, is_dataclass
 from importlib import import_module
 from pathlib import Path
 from typing import Annotated, Union, Iterable
@@ -22,10 +23,17 @@ class ExecutableCommand(ABC):
         raise NotImplementedError
 
 
+def is_tyro_parseable(t: type) -> bool:
+    try:
+        tyro.extras.get_parser(t)
+    except (AssertionError, UnsupportedTypeAnnotationError) as e:
+        return False
+    return True
+
+
 @typing.no_type_check
-def make_experiment_subcommand(experiment: Experiment):
+def make_redo_command[I, O](experiment: Experiment[I, O]):
     artifact_literal = tyro.extras.literal_type_from_choices(sorted(experiment.artifact_names))
-    default_config_literal = tyro.extras.literal_type_from_choices(sorted(experiment.default_config_names))
 
     @dataclass(frozen=True)
     class Redo(ExecutableCommand):
@@ -35,6 +43,10 @@ def make_experiment_subcommand(experiment: Experiment):
         def __call__(self):
             experiment.redo_artifact(self.artifact_name, self.path)
 
+    return Annotated[Redo, tyro.conf.subcommand(name="redo", description="Recreate artifacts of existing run.")]
+
+
+def make_reproduce_command[I, O](experiment: Experiment[I, O]):
     @dataclass(frozen=True)
     class Reproduce(ExecutableCommand):
         path: Annotated[str, tyro.conf.Positional]  # path to run
@@ -43,55 +55,126 @@ def make_experiment_subcommand(experiment: Experiment):
             run = experiment.reproduce(self.path)
             print(f"[expyro] Saved reproduced run to: {run.path.as_uri()}")
 
-    @dataclass(frozen=True)
-    class Default(ExecutableCommand):
-        name: Annotated[default_config_literal, tyro.conf.Positional]  # name of config
+    return Annotated[Reproduce, tyro.conf.subcommand(
+        name="reproduce", description="Run experiment with config of existing run."
+    )]
 
-        def __call__(self):
-            run = experiment.run_default(self.name)
-            print(f"[expyro] Saved run to: {run.path.as_uri()}")
 
-    args = [
-        Annotated[Reproduce, tyro.conf.subcommand(
-            name="reproduce", description="Run experiment with config of existing run."
-        )]
-    ]
-
-    try:
-        tyro.extras.get_parser(experiment.signature.type_config)
-    except (AssertionError, UnsupportedTypeAnnotationError) as e:
+def make_run_command[I, O](experiment: Experiment[I, O]):
+    if not is_tyro_parseable(experiment.signature.type_config):
         @dataclass(frozen=True)
         class RunNotAvailable(ExecutableCommand):
-            def __call__(self, _e: str = e):
+            def __call__(self):
                 print(f"[expyro] Cannot run experiment from command line because config "
-                      f"`{experiment.signature.type_config}` cannot be parsed. {_e}")
+                      f"`{experiment.signature.type_config}` cannot be parsed.")
 
-        args.append(Annotated[RunNotAvailable, tyro.conf.subcommand(
+        return Annotated[RunNotAvailable, tyro.conf.subcommand(
             name="run", description="Command unavailable. Run without arguments for details."
-        )])
-    else:
-        args.append(Annotated[experiment.signature.type_config, tyro.conf.subcommand(
-            name="run", description="Run experiment with custom config."
-        )])
+        )]
 
-    if experiment.default_config_names:
-        args.append(Annotated[Default, tyro.conf.subcommand(
-            name="default", description="Run experiment with predefined config."
-        )])
+    return Annotated[experiment.signature.type_config, tyro.conf.subcommand(
+        name="run", description="Run experiment with custom config."
+    )]
+
+
+@typing.no_type_check
+def make_default_command[I, O](experiment: Experiment[I, O]):
+    if is_tyro_parseable(experiment.signature.type_config):  # overrides possible
+        wrapper_classes = set()
+
+        @typing.no_type_check
+        def make_option(config) -> type:
+            if is_dataclass(experiment.signature.type_config):
+                config_cls = experiment.signature.type_config
+            else:
+                @dataclass(frozen=True)
+                class ConfigOption:
+                    config: Annotated[experiment.signature.type_config, tyro.conf.Positional] = field(
+                        default_factory=lambda: config
+                    )
+
+                wrapper_classes.add(ConfigOption)
+
+                config_cls = ConfigOption
+
+            return config_cls
+
+        default_subcommands = [
+            Annotated[
+                make_option(config),
+                tyro.conf.subcommand(name=name, default=config)
+            ]
+            for name, config in sorted(experiment.default_configs.items())
+        ]
+
+        # dummy subcommand ensuring that tyro treats single defaults the same as multiple defaults
+        default_subcommands.append(Annotated[None, tyro.conf.Suppress])
+
+        @tyro.conf.configure(tyro.conf.OmitSubcommandPrefixes)
+        def parse_default(value: Union[tuple(default_subcommands)]):
+            if isinstance(value, experiment.signature.type_config):
+                config = value
+            elif type(value) in wrapper_classes:
+                config = value.config
+            else:
+                raise ValueError(f"Parsed value `{value}` cannot be converted to config.")
+
+            return copy.deepcopy(config)
+    else:  # no overrides possible
+        def make_option(config):
+            @dataclass(frozen=True)
+            class Option:
+                def __call__(self):
+                    return config
+
+            return Option
+
+        default_subcommands = [
+            Annotated[
+                make_option(config),
+                tyro.conf.subcommand(name=name, default=config)
+            ]
+            for name, config in sorted(experiment.default_configs.items())
+        ]
+
+        # dummy subcommand ensuring that tyro treats single defaults the same as multiple defaults
+        default_subcommands.append(Annotated[None, tyro.conf.Suppress])
+
+        @tyro.conf.configure(tyro.conf.OmitSubcommandPrefixes)
+        def parse_default(option: Union[tuple(default_subcommands)]):
+            return option()
+
+    return Annotated[experiment.signature.type_config, tyro.conf.subcommand(
+        name="default",
+        description="Run experiment with predefined config.",
+        constructor=parse_default,
+    )]
+
+
+@typing.no_type_check
+def make_experiment_subcommand(experiment: Experiment):
+    args = [
+        make_reproduce_command(experiment),
+        make_run_command(experiment),
+    ]
+
     if experiment.artifact_names:
-        args.append(Annotated[Redo, tyro.conf.subcommand(
-            name="redo", description="Recreate artifacts of existing run."
-        )])
+        args.append(make_redo_command(experiment))
 
-    @tyro.conf.configure(tyro.conf.OmitSubcommandPrefixes)
-    def parse_experiment(config: Union[tuple(args)]):
-        if isinstance(config, ExecutableCommand):
-            config()
-        elif isinstance(config, experiment.signature.type_config):
-            run = experiment(config)
+    if experiment.default_configs:
+        args.append(make_default_command(experiment))
+
+    @tyro.conf.configure(tyro.conf.OmitSubcommandPrefixes, tyro.conf.ConsolidateSubcommandArgs)
+    def parse_experiment(arg: Union[tuple(args)]):
+        if isinstance(arg, ExecutableCommand):
+            arg()
+        elif isinstance(arg, experiment.signature.type_config):
+            run = experiment(arg)
             print(f"[expyro] Saved run to: {run.path.as_uri()}")
         else:
-            raise ValueError(f"Cannot handle argument of type {type(config)}: {config}.")
+            raise ValueError(f"Cannot handle argument of type {type(arg)}: {arg}.")
+
+    parse_experiment.__doc__ = experiment.__doc__
 
     return parse_experiment
 
