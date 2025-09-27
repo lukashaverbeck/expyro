@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from functools import update_wrapper
 from pathlib import Path
-from typing import Callable, get_type_hints, Optional, TYPE_CHECKING, Iterator, NamedTuple, Mapping
+from typing import Callable, get_type_hints, Optional, TYPE_CHECKING, Iterator, Mapping
 
 import expyro._hook as hook
 
@@ -18,7 +18,7 @@ type Postprocessor[I, O] = Callable[[Run[I, O]], None]
 type ExperimentWrapper[I, O] = Callable[[Experiment[I, O]], Experiment[I, O]]
 
 if TYPE_CHECKING:
-    from expyro._artifacts import Artifact
+    from expyro._artifacts import ArtifactProcedure
 
 registry: dict[str, Experiment] = {}
 
@@ -135,9 +135,18 @@ class Run[I, O]:
         return subdir
 
 
-class ArtifactMetadata(NamedTuple):
-    name: str
+class Artifact[I, O]:
+    procedure: ArtifactProcedure[I, O]
     directory_name: str
+
+    def __init__(self, procedure: ArtifactProcedure[I, O], directory_name: str):
+        self.procedure = procedure
+        self.directory_name = directory_name
+
+    def __call__(self, run: Run[I, O]) -> None:
+        path = self.path(run)
+        path.mkdir(parents=True, exist_ok=False)
+        self.procedure(path, run.config, run.result)
 
     def path(self, run: Run) -> Path:
         return run.path / "artifacts" / self.directory_name
@@ -148,13 +157,13 @@ class Experiment[I, O]:
     signature: Signature[I, O]
     root_dir: Path
     name: str
-    __artifacts: dict[ArtifactMetadata, list[Artifact[I, O]]]
+    __artifacts: dict[str, Artifact[I, O]]
     __postprocessors: list[Postprocessor[I, O]]
     __default_configs: dict[str, I]
 
     @property
     def artifact_names(self) -> set[str]:
-        return {metadata.name for metadata in self.__artifacts}
+        return set(self.__artifacts.keys())
 
     @property
     def default_configs(self) -> dict[str, I]:
@@ -182,27 +191,25 @@ class Experiment[I, O]:
         update_wrapper(self, fn)
 
     def register_artifact(
-            self, artifact: Artifact[I, O], name: Optional[str] = None, directory_name: Optional[str] = None
+            self, procedure: ArtifactProcedure[I, O], name: Optional[str] = None, directory_name: Optional[str] = None
     ):
         if name is None:
-            name = artifact.__name__
+            name = procedure.__name__
 
         if directory_name is None:
             directory_name = name
 
-        metadata = ArtifactMetadata(name=name, directory_name=directory_name)
+        if name in self.__artifacts:
+            raise KeyError(f"Experiment `{self.name}` already has artifact named `{name}`.")
 
-        if metadata not in self.__artifacts:
-            self.__artifacts[metadata] = []
-
-        self.__artifacts[metadata].append(artifact)
+        self.__artifacts[name] = Artifact(procedure, directory_name)
 
     def register_postprocessor(self, processor: Postprocessor[I, O]):
         self.__postprocessors.append(processor)
 
     def register_default_config(self, name: str, config: I):
         if name in self.__default_configs:
-            raise KeyError(f"Experiment `{name}` already exists.")
+            raise KeyError(f"Experiment `{self.name}` already has default config named `{name}`.")
 
         self.__default_configs[name] = config
 
@@ -210,29 +217,16 @@ class Experiment[I, O]:
         if not isinstance(run, Run):
             run = self[run]
 
-        found = False
+        if name not in self.__artifacts:
+            raise KeyError(f"Experiment `{self.name}` has no artifact named `{name}`.")
 
-        for metadata, artifacts in self.__artifacts.items():
-            if metadata.name != name:
-                continue
+        artifact = self.__artifacts[name]
+        path = artifact.path(run)
 
-            path = metadata.path(run)
+        if path.exists():
+            shutil.rmtree(path)
 
-            if path.exists():
-                shutil.rmtree(path)
-
-            self.__make_artifacts(metadata, run)
-            found = True
-
-        if not found:
-            raise KeyError(f"Experiment has no artifact with name `{name}`.")
-
-    def __make_artifacts(self, meta: ArtifactMetadata, run: Run[I, O]):
-        path = meta.path(run)
-        path.mkdir(parents=True, exist_ok=True)
-
-        for artifact in self.__artifacts[meta]:
-            artifact(path, run.config, run.result)
+        artifact(run)
 
     def reproduce(self, run: Run[I, O] | str | Path) -> Run[I, O]:
         if not isinstance(run, Run):
@@ -242,7 +236,7 @@ class Experiment[I, O]:
 
     def run_default(self, name: str) -> Run[I, O]:
         if name not in self.__default_configs:
-            raise KeyError(f"Experiment `{name}` doesn't exist.")
+            raise KeyError(f"Experiment `{self.name}` has no default config named `{name}`.")
 
         config = self.__default_configs[name]
 
@@ -263,8 +257,8 @@ class Experiment[I, O]:
         run = Run(config, result, dir_run)
         run.dump()
 
-        for metadata in self.__artifacts:
-            self.__make_artifacts(metadata, run)
+        for artifact in self.__artifacts.values():
+            artifact(run)
 
         for processor in self.__postprocessors:
             processor(run)
